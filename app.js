@@ -8,7 +8,7 @@ const sharp = require("sharp");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Multer setup for uploads
+// Multer setup
 const upload = multer({ dest: "uploads/" });
 
 const INPUT_ZIP = "input.zip";
@@ -16,10 +16,10 @@ const OUTPUT_ZIP = "enhanced_output.zip";
 const EXTRACT_FOLDER = "input_pngs";
 const OUTPUT_FOLDER = "enhanced_pngs";
 
-// Ensure folders exist
+// Ensure uploads folder exists
 if (!fs.existsSync("uploads")) fs.mkdirSync("uploads");
 
-// Upload page
+// ---------------- Upload page ----------------
 app.get("/", (req, res) => {
   res.send(`
     <h2>PNG Enhancer Bot (Node.js)</h2>
@@ -33,20 +33,20 @@ app.get("/", (req, res) => {
   `);
 });
 
-// Upload new ZIP
+// ---------------- Upload new ZIP ----------------
 app.post("/upload", upload.single("zipfile"), (req, res) => {
   const filePath = req.file.path;
   fs.renameSync(filePath, INPUT_ZIP);
   enhanceZIP().then(() => res.download(OUTPUT_ZIP));
 });
 
-// Enhance existing ZIP
+// ---------------- Enhance existing ZIP ----------------
 app.post("/enhance-existing", (req, res) => {
   if (!fs.existsSync(INPUT_ZIP)) return res.send("No ZIP found.");
   enhanceZIP().then(() => res.download(OUTPUT_ZIP));
 });
 
-// ---------------- Core enhancement ----------------
+// ---------------- Core enhancement function ----------------
 async function enhanceZIP() {
   // Clean old folders
   [EXTRACT_FOLDER, OUTPUT_FOLDER].forEach(f => {
@@ -58,7 +58,7 @@ async function enhanceZIP() {
   const zip = new AdmZip(INPUT_ZIP);
   zip.extractAllTo(EXTRACT_FOLDER, true);
 
-  // Recursively enhance PNGs
+  // Recursively process PNGs
   async function processFolder(src, dest) {
     const files = fs.readdirSync(src, { withFileTypes: true });
     for (let f of files) {
@@ -68,8 +68,11 @@ async function enhanceZIP() {
         fs.mkdirSync(destPath, { recursive: true });
         await processFolder(srcPath, destPath);
       } else if (f.isFile() && f.name.toLowerCase().endsWith(".png")) {
-        await sharp(srcPath)
-          .resize({ width: null, height: null, withoutEnlargement: false, fit: "contain" })
+        // Enhance PNG using sharp (upscale 2x)
+        const image = sharp(srcPath);
+        const metadata = await image.metadata();
+        await image
+          .resize(metadata.width * 2, metadata.height * 2) // simple 2x upscale
           .toFile(destPath);
       }
     }
@@ -77,7 +80,7 @@ async function enhanceZIP() {
 
   await processFolder(EXTRACT_FOLDER, OUTPUT_FOLDER);
 
-  // Zip enhanced images
+  // Re-zip enhanced images
   const outZip = new AdmZip();
   function addFolderToZip(folder, zipFolder) {
     const files = fs.readdirSync(folder, { withFileTypes: true });
@@ -92,5 +95,5 @@ async function enhanceZIP() {
   outZip.writeZip(OUTPUT_ZIP);
 }
 
-// Start server
+// ---------------- Start server ----------------
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
